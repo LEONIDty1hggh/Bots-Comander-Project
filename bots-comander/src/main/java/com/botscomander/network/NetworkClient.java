@@ -8,11 +8,13 @@ import java.io.PrintWriter;
 import java.net.Socket;
 
 import static com.botscomander.BotsComander.bot;
+import com.botscomander.BotsComander;
 
 public class NetworkClient {
     private final String host;
     private final int port;
     private final String botId;
+
 
     public NetworkClient(String host, int port, String botId) {
         this.host = host;
@@ -70,6 +72,8 @@ public class NetworkClient {
         }
         else if (promt.equals("command")) {
             System.out.println("Запрос с сервера на отправку команды " + message);
+            bot.setcommandsendtimes(0);
+            BotsComander.timerforreset = 0;
             bot.sendCommand(message);
         }
         else if (promt.equals("connect")) {

@@ -1,8 +1,8 @@
 package com.botscomander;
+
 import com.botscomander.Util.IdGenerator;
 import com.botscomander.mixin.ExampleMixin;
 import com.botscomander.network.NetworkClient;
-import net.fabricmc.fabric.mixin.networking.client.accessor.MinecraftClientAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
@@ -11,12 +11,14 @@ import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.network.ServerAddress;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.session.Session;
-import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.text.Text;
-
 import java.util.Optional;
 import java.util.UUID;
+
+
+//фикс снятия предметов с аука через нейронку
 
 public class Bot {
     private String bot_id;
@@ -31,38 +33,41 @@ public class Bot {
     private boolean setisNeedToTakeAllFromAh = false;
     private boolean needToDropAll = false;
     private int currentDropSlot = 0;
+    private boolean isneedsendcommandanagin = false;
+    private int commandsendtimes = 0;
+    private String expectedBalance = "";
+
+    // Поле для предотвращения зависания в интерфейсах
+    private long takeAllStartTime = 0;
 
     public Bot() {
-
         IdGenerator generator = new IdGenerator();
-
         this.bot_id = generator.getOrCreateBotId();
-
         this.network = new NetworkClient("localhost", 5000, this.bot_id);
-
-        // 3. Запускаем асинхронное чтение сокета
         this.network.startListening();
     }
 
     public void sendMessage(String message) {
         if (MC.player != null) {
             MC.player.networkHandler.sendChatMessage(message);
-        }
-        else {
+        } else {
             System.out.println("[" + this.bot_id + "] Игрок не найден, сообщение не отправлено.");
         }
     }
 
     public void sendCommand(String command) {
         if (MC.player != null) {
-            if (command.contains("fullbal")) {
-                MC.getNetworkHandler().sendChatCommand("money");
-                lastcommand = command;
-                return;
+            if (command.contains("pay")) {
+                isneedsendcommandanagin = true;
+                if (command.contains("fullbal")) {
+                    MC.getNetworkHandler().sendChatCommand("money");
+                    lastcommand = command;
+                    return;
+                }
             }
+
             MC.getNetworkHandler().sendChatCommand(command);
-        }
-        else {
+        } else {
             System.out.println("[" + this.bot_id + "] Игрок не найден, команда не отправлена.");
         }
     }
@@ -72,11 +77,11 @@ public class Bot {
             System.out.println("[" + this.bot_id + "] Команда не найдена, команда не отправлена.");
             return;
         }
+
         if (MC.player != null) {
             MC.getNetworkHandler().sendChatCommand(lastcommand.replace("fullbal", balance));
         }
     }
-
     public String getBotUsername() {
         if (MC.player != null) {
             return MC.player.getName().getString();
@@ -90,12 +95,10 @@ public class Bot {
         MC.execute(() -> {
             try {
                 System.out.println("[" + this.bot_id + "] Начинаю смену ника на: " + newNickname);
-
                 if (MC.world != null) {
-                    MC.disconnect(new net.minecraft.client.gui.screen.TitleScreen(), false);
+                    MC.disconnect(new TitleScreen(), false);
                     System.out.println("[" + this.bot_id + "] Отключились от сервера для смены ника.");
                 }
-
                 Session newSession = new Session(
                         newNickname,
                         UUID.randomUUID(),
@@ -104,12 +107,8 @@ public class Bot {
                         Optional.empty(),
                         Session.AccountType.MOJANG
                 );
-
                 ((ExampleMixin) MC).setSession(newSession);
                 System.out.println("[" + this.bot_id + "] Ник в сессии успешно изменен!");
-
-
-
             } catch (Exception e) {
                 System.out.println("Ошибка при смене ника: " + e.getMessage());
             }
@@ -121,7 +120,6 @@ public class Bot {
             try {
                 ServerInfo serverInfo = new ServerInfo("Server", ip + ":25565", ServerInfo.ServerType.OTHER);
                 serverInfo.setResourcePackPolicy(ServerInfo.ResourcePackPolicy.DISABLED);
-
                 ConnectScreen.connect(
                         new TitleScreen(),
                         MC,
@@ -138,7 +136,6 @@ public class Bot {
     }
 
     public void refreshAh(MinecraftClient client) {
-        // Шаг 0: Команда
         if (this.step == 0) {
             if (client.currentScreen instanceof HandledScreen<?> screen) {
                 String title = screen.getTitle().getString().toLowerCase();
@@ -149,17 +146,16 @@ public class Bot {
             } else {
                 client.player.networkHandler.sendChatCommand("ah");
                 this.step = 1;
-                this.timer = 20; // Пауза 2 сек на открытие
+                this.timer = 20;
             }
         }
-        // Шаги в меню
         else if (client.currentScreen instanceof GenericContainerScreen screen) {
             if (this.step == 1) {
-                clickSlot(client, screen, 46); // Клик по сундуку
+                clickSlot(client, screen, 46);
                 this.step = 2;
                 this.timer = 20;
             } else if (this.step == 2) {
-                clickSlot(client, screen, 52); // Клик по часам
+                clickSlot(client, screen, 52);
                 this.step = 3;
                 this.timer = 20;
             } else if (step == 3) {
@@ -172,62 +168,116 @@ public class Bot {
         }
     }
 
-    public void takeAllFromAh() {
+    // Внедренная обновленная логика takeAll
+    public void takeAllFromAh(long now) {
         if (MC.player == null) {
             System.out.println("[" + this.bot_id + "] Ошибка, зайдите на сервер");
             return;
         }
-        if (this.step == 0) {
-            MC.getNetworkHandler().sendChatCommand("ah");
-            this.timer = 20;
-            this.step = 1;
+
+        // Защита от зависания: если процесс затянулся больше 30 сек — сбрасываем
+        if (this.step > 0 && takeAllStartTime > 0 && (now - takeAllStartTime) > 30000) {
+            resetTakeAll("TIMEOUT 30s");
+            return;
         }
-        else if (MC.currentScreen instanceof GenericContainerScreen screen) {
-            if (this.step == 1) {
-                clickSlot(MC, screen, 46); // Клик по сундуку
-                this.step = 2;
+
+        switch (this.step) {
+            case 0 -> {
+                takeAllStartTime = now;
+                MC.getNetworkHandler().sendChatCommand("ah");
                 this.timer = 20;
-            } else if (this.step == 2) {
-                var handler = screen.getScreenHandler();
-                for (int i = 0; i < handler.slots.size(); i++) {
-                    if (i >= 45 && i <= 53) {
-                        continue;
-                    }
-                    var slot = handler.getSlot(i);
-                    if (slot != null && slot.hasStack()) {
-                        totalItems += slot.getStack().getCount();
-                    }
-                }
-                this.step = 3;
-            } else if (step == 3) {
-                clickSlot(MC, screen, 0);
-                timer = 10;
-                if (totalItems == 0) {
-                    var handler = screen.getScreenHandler();
-                    for (int i = 0; i < handler.slots.size(); i++) {
-                        if (i >= 45 && i <= 53) {
-                            continue;
-                        }
-                        var slot = handler.getSlot(i);
-                        if (slot != null && slot.hasStack()) {
-                            totalItems += slot.getStack().getCount();
-                        }
-                    }
-                    if (totalItems == 0) {
-                        this.step = 4;
-                    }
-                }
-            }else if (step == 4) {
-                MC.player.closeHandledScreen();
-                this.step = 0;
-                this.timer = 0;
-                this.totalItems = 0;
-                this.getisNeedToRefreshAh = false;
+                this.step = 1;
             }
+            case 1 -> {
+                if (MC.currentScreen instanceof HandledScreen<?> screen) {
+                    String title = screen.getTitle().getString().toLowerCase();
+                    if (title.contains("аукцион") || title.contains("auction")) {
+                        clickSlot(MC, screen, 46); // Клик по хранилищу
+                        this.step = 2;
+                        this.timer = 15;
+                    } else {
+                        MC.player.closeHandledScreen();
+                        this.timer = 10;
+                    }
+                } else if ((now - takeAllStartTime) > 5000) {
+                    MC.getNetworkHandler().sendChatCommand("ah");
+                    this.timer = 20;
+                } else {
+                    this.timer = 5;
+                }
+            }
+            case 2 -> {
+                if (!(MC.currentScreen instanceof HandledScreen<?> screen)) {
+                    resetTakeAll("Экран пропал на шаге 2");
+                    return;
+                }
+                this.totalItems = countStorageItems(screen.getScreenHandler());
+                if (this.totalItems <= 0) {
+                    finishTakeAll();
+                } else {
+                    this.step = 3;
+                    this.timer = 5;
+                }
+            }
+            case 3 -> {
+                if (!(MC.currentScreen instanceof HandledScreen<?> screen)) {
+                    finishTakeAll();
+                    return;
+                }
+                clickSlot(MC, screen, 0); // Забираем предмет из 0 слота хранилища
+                this.totalItems--;
+
+                if (this.totalItems <= 0) {
+                    this.step = 4;
+                    this.timer = 10;
+                } else {
+                    this.timer = 8; // Небольшая задержка между кликами для стабильности
+                }
+            }
+            case 4 -> finishTakeAll();
+            default -> resetTakeAll("Неизвестный шаг " + this.step);
         }
     }
 
-    private void clickSlot(MinecraftClient client, GenericContainerScreen screen, int slotId) {
+    private static int countStorageItems(ScreenHandler handler) {
+        int total = 0;
+        int containerSlots = Math.max(0, handler.slots.size() - 36);
+        for (int i = 0; i < containerSlots; i++) {
+            Slot slot = handler.getSlot(i);
+            if (slot != null && slot.hasStack()) {
+                total += slot.getStack().getCount();
+            }
+        }
+        return total;
+    }
+
+    private void finishTakeAll() {
+        if (MC.player != null) {
+            MC.player.closeHandledScreen();
+        }
+        MC.setScreen(null);
+        this.step = 0;
+        this.timer = 0;
+        this.totalItems = 0;
+        this.setisNeedToTakeAllFromAh = false;
+        takeAllStartTime = 0;
+        System.out.println("[" + this.bot_id + "] Сбор лотов завершён, окно закрыто");
+    }
+
+    private void resetTakeAll(String reason) {
+        System.out.println("[" + this.bot_id + "] takeAll сброс: " + reason);
+        if (MC.player != null) {
+            MC.player.closeHandledScreen();
+        }
+        MC.setScreen(null);
+        this.step = 0;
+        this.timer = 0;
+        this.totalItems = 0;
+        this.setisNeedToTakeAllFromAh = false;
+        takeAllStartTime = 0;
+    }
+
+    private void clickSlot(MinecraftClient client, HandledScreen<?> screen, int slotId) {
         if (client.interactionManager != null) {
             client.interactionManager.clickSlot(
                     screen.getScreenHandler().syncId,
@@ -236,27 +286,11 @@ public class Bot {
         }
     }
 
-    public boolean isNeedToDropAll() {
-        return this.needToDropAll;
-    }
-
-    public void setNeedToDropAll(boolean needToDropAll) {
-        this.needToDropAll = needToDropAll;
-    }
-
-    public int getCurrentDropSlot() {
-        return this.currentDropSlot;
-    }
-
-    public void setCurrentDropSlot(int currentDropSlot) {
-        this.currentDropSlot = currentDropSlot;
-    }
-
-    public void triggerDropAll() {
-        this.currentDropSlot = 0;
-        this.needToDropAll = true;
-    }
-
+    public boolean isNeedToDropAll() { return this.needToDropAll; }
+    public void setNeedToDropAll(boolean needToDropAll) { this.needToDropAll = needToDropAll; }
+    public int getCurrentDropSlot() { return this.currentDropSlot; }
+    public void setCurrentDropSlot(int currentDropSlot) { this.currentDropSlot = currentDropSlot; }
+    public void triggerDropAll() { this.currentDropSlot = 0; this.needToDropAll = true; }
     public Integer gettimer() { return this.timer; }
     public void setTimer(Integer timer) { this.timer = timer; }
     public boolean getisNeedToRefreshAh() { return this.getisNeedToRefreshAh; }
@@ -272,6 +306,7 @@ public class Bot {
         this.step = 0;
         this.totalItems = 0;
     }
+
     public void setisNeedToTakeAllFromAh(boolean setisNeedToTakeAllFromAh) {
         if (this.getisNeedToRefreshAh) {
             System.out.println("Сейчас работает перезагрузка аукциона ...");
@@ -282,5 +317,13 @@ public class Bot {
         this.step = 0;
         this.totalItems = 0;
     }
+    public String getExpectedBalance() {
+        return this.expectedBalance;
+    }
 
+    public void setExpectedBalance(String expectedBalance) {
+        this.expectedBalance = expectedBalance;
+    }
+
+    public void setcommandsendtimes(int commandsendtimes) {this.commandsendtimes = commandsendtimes;}
 }
