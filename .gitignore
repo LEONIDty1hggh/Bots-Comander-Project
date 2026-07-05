@@ -1,0 +1,15 @@
+# --- Python (Сервер) ---
+**/__pycache__/
+**/.venv/
+**/venv/
+**/*.json
+**/*.log
+
+# --- Java / Gradle (Мод) ---
+**/.gradle/
+**/build/
+**/out/
+**/.idea/
+**/*.gradle.user
+**/*.iws
+**/*.ipr
