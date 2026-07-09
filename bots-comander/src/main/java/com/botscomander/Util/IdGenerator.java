@@ -1,4 +1,6 @@
 package com.botscomander.Util;
+import net.minecraft.client.MinecraftClient;
+
 import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 import java.io.File;
@@ -7,32 +9,32 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.UUID;
 
+import static com.botscomander.BotsComander.bot;
+
 public class IdGenerator {
-    private static final String ID_FILE_NAME = "config/bot_id.txt";
+    private static MinecraftClient MC = MinecraftClient.getInstance();
+    private static final String BOT_NAME = getBotUsername();
+    private static final String ID_FILE_NAME = "config/bot_id_" + BOT_NAME + ".txt";
+
+
 
     public static String getOrCreateBotId() {
         File file = new File(ID_FILE_NAME);
 
-        // 1. Проверяем, существует ли уже сохраненный ID
         if (file.exists()) {
             try {
-                // Читаем ID из файла, убирая лишние пробелы
                 String savedId = new String(Files.readAllBytes(file.toPath())).trim();
                 if (!savedId.isEmpty()) {
-                    return savedId; // Возвращаем старый ID
+                    return savedId;
                 }
             } catch (IOException e) {
                 System.out.println("Ошибка чтения bot_id: " + e.getMessage());
             }
         }
 
-        // 2. Если файла нет или он пустой, генерируем НОВЫЙ уникальный ID
-        // UUID.randomUUID() создает строку типа "123e4567-e89b-12d3-a456-426614174000"
         String newId = UUID.randomUUID().toString();
 
-        // 3. Сохраняем этот новый ID в файл, чтобы при следующем запуске прочитать его
         try {
-            // Создаем папки, если их нет (например, если папки config еще не существует)
             file.getParentFile().mkdirs();
 
             try (FileWriter writer = new FileWriter(file)) {
@@ -44,5 +46,14 @@ public class IdGenerator {
         }
 
         return newId;
+    }
+
+    private static String getBotUsername() {
+        if (MC.player != null) {
+            return MC.player.getName().getString();
+        } else if (MC.getSession() != null) {
+            return MC.getSession().getUsername();
+        }
+        return "";
     }
 }
