@@ -68,28 +68,34 @@ public class NetworkClient {
     private void handleServerMessage(String promt, String message) {
         if (promt.equals("msg")) {
             System.out.println("Запрос с сервера на отправку сообщения " + message);
+            bot.setLastCommand("msg", message);
             bot.sendMessage(message);
         }
         else if (promt.equals("command")) {
             System.out.println("Запрос с сервера на отправку команды " + message);
             bot.setcommandsendtimes(0);
             BotsComander.timerforreset = 0;
+            bot.setLastCommand("command", message);
             bot.sendCommand(message);
         }
         else if (promt.equals("connect")) {
             System.out.println("Запрос с сервера на подключение к серверу " + message);
+            bot.setLastCommand("connect", message);
             bot.connectToServer(message);
         }
         else if (promt.equals("takeallfromah")) {
             System.out.println("Запрос с сервера на снятия всего с аукциона" + message);
+            bot.setLastCommand("takeallfromah", message);
             bot.setisNeedToTakeAllFromAh(true);
         }
         else if (promt.equals("refreshah")) {
             System.out.println("Запрос с сервера на перевыставление предметов на аукционе" + message);
+            bot.setLastCommand("refreshah", message);
             bot.setisNeedToRefreshAh(true);
         }
         else if (promt.equals("dropall")) {
             System.out.println("Запрос с сервера на выкидываение всех пердметов" + message);
+            bot.setLastCommand("dropall", message);
             bot.triggerDropAll();
         }
     }
@@ -97,6 +103,7 @@ public class NetworkClient {
     private boolean changeusername (String message) {
         System.out.println("Запрос с сервера на смену ника " + message);
         try {
+            bot.setLastCommand("changenik", message);
             bot.changeBotNick(message);
             return true;
         } catch (Exception e) {

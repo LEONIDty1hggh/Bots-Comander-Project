@@ -36,6 +36,13 @@ public class BotsComander implements ClientModInitializer {
 			}
 			if (client.player == null || client.interactionManager == null) return;
 
+			// Анти афк
+
+			if (bot.getAFK()) {
+				System.out.println("АНТИ АФК");
+				bot.inAfk();
+			}
+
 			// ================= БЛОК ДЛЯ DROP ALL =================
 			if (bot.isNeedToDropAll()) {
 				var handler = client.player.currentScreenHandler;
@@ -84,9 +91,10 @@ public class BotsComander implements ClientModInitializer {
 			}
 
 			if (isNeedToRefreshah) {
+				bot.setLastCommand("refreshAh", "");
 				bot.refreshAh(client);
 			} else {
-				// Передаем текущее время для работы таймаутов защиты сборщика лотов
+				bot.setLastCommand("takeAllFromAh", "");
 				bot.takeAllFromAh(System.currentTimeMillis());
 			}
 		});
@@ -109,6 +117,7 @@ public class BotsComander implements ClientModInitializer {
 				String balance = m.group(1).replace(",", "");
 
 				bot.setExpectedBalance(balance);
+				bot.setLastCommand("sendFullbalCommand", balance);
 				bot.sendFullbalCommand(balance);
 			}
 
@@ -129,10 +138,15 @@ public class BotsComander implements ClientModInitializer {
 				if (expected != null && expected.equals(amount)) {
 
 
+					bot.setLastCommand("sendFullbalCommand", amount);
 					bot.sendFullbalCommand(amount);
 					bot.setExpectedBalance("");
 				}
 			}
+		}
+
+		if (low.contains("afk") || low.contains("команда не доступна в ") || low.contains("режиме afk")) {
+			bot.setAFK(true);
 		}
 	}
 
